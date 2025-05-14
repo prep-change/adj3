@@ -130,7 +130,7 @@
             return patterns;
           }
 
-          function findOptimalAdjustment(input, baseTargets, maxTry = 30) {
+          function findOptimalAdjustment(input, baseTargets, maxTry = 15) {
             let best = null;
             for (let t = 0; t <= maxTry; t++) {
               const patterns = generateAdjustmentPatterns(baseTargets, t);
@@ -164,7 +164,7 @@
             return best;
           }
 
-          const result = findOptimalAdjustment(input, baseTargets, 30);
+          const result = findOptimalAdjustment(input, baseTargets, 15);
           postMessage(result);
         };
       `], { type: "application/javascript" });

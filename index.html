@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>釣銭準備</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -11,11 +11,6 @@
     <h1 class="text-2xl font-bold mb-4 text-center">釣銭準備</h1>
 
     <div id="input-area" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6"></div>
-
-    <div class="mb-4">
-      <p class="font-semibold mb-2">不足金種の調整候補から除外する金種:</p>
-      <div id="exclude-area" class="grid grid-cols-3 gap-2 text-sm"></div>
-    </div>
 
     <button onclick="calculateShortage()" class="w-full bg-blue-500 text-white py-2 rounded mb-4">不足を計算する</button>
     <button onclick="adjustShortage()" class="w-full bg-green-500 text-white py-2 rounded">調整</button>
@@ -39,38 +34,22 @@
     };
 
     let latestInput = {};
+    let excludedShortageAdjustments = new Set();
 
     const inputArea = document.getElementById("input-area");
-    const excludeArea = document.getElementById("exclude-area");
-    const excludeDenoms = new Set();
-
     denominations.forEach(denom => {
-      // 入力欄
       const wrapper = document.createElement("div");
       wrapper.className = "flex items-center space-x-2 min-w-0";
       wrapper.innerHTML = `
         <label class="w-20 font-medium">${denom}円</label>
         <input id="input${denom}" type="number" min="0" value="" class="flex-1 p-1 border rounded w-full" />
+        <label class="text-sm whitespace-nowrap">
+          <input id="exclude${denom}" type="checkbox" class="mr-1" />
+          除外
+        </label>
       `;
       inputArea.appendChild(wrapper);
-
-      // 除外チェックボックス
-      const checkbox = document.createElement("label");
-      checkbox.className = "flex items-center space-x-2";
-      checkbox.innerHTML = `
-        <input type="checkbox" id="exclude${denom}" onchange="toggleExclude(${denom})" />
-        <span>${denom}円</span>
-      `;
-      excludeArea.appendChild(checkbox);
     });
-
-    function toggleExclude(denom) {
-      if (excludeDenoms.has(denom)) {
-        excludeDenoms.delete(denom);
-      } else {
-        excludeDenoms.add(denom);
-      }
-    }
 
     function calculateShortage() {
       const input = {};
@@ -99,6 +78,10 @@
         document.getElementById("adjustmentResult").innerText = "※ 先に「不足を計算する」を押してください。";
         return;
       }
+
+      excludedShortageAdjustments = new Set(
+        denominations.filter(denom => document.getElementById(`exclude${denom}`).checked)
+      );
 
       document.getElementById("adjustmentResult").innerText = "調整中です...";
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -138,13 +121,12 @@
       let best = null;
 
       for (let t = 0; t <= maxTry; t++) {
-        const patterns = generateAdjustmentPatterns(baseTargets, t);
+        const patterns = generateAdjustmentPatterns(baseTargets, t, excludedShortageAdjustments);
         for (let newTargets of patterns) {
           const shortage = {};
           let shortageTotal = 0, shortageCount = 0;
 
           for (let denom of denominations) {
-            if (excludeDenoms.has(denom)) continue;
             const need = newTargets[denom] || 0;
             const lack = Math.max(0, need - input[denom]);
             if (lack > 0) {
@@ -175,7 +157,7 @@
       return best;
     }
 
-    function generateAdjustmentPatterns(baseTargets, extraCount) {
+    function generateAdjustmentPatterns(baseTargets, extraCount, excludeSet) {
       if (extraCount === 0) return [Object.assign({}, baseTargets)];
       const patterns = [];
       const denoms = Object.keys(baseTargets).map(Number);
@@ -186,7 +168,7 @@
           return;
         }
         const denom = denoms[i];
-        const limit = (denom === 5000) ? Math.min(1, remaining) : remaining;
+        const limit = excludeSet.has(denom) ? 0 : ((denom === 5000) ? Math.min(1, remaining) : remaining);
         for (let add = 0; add <= limit; add++) {
           current[denom] = baseTargets[denom] + add;
           backtrack(i + 1, remaining - add, current);

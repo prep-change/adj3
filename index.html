@@ -1,119 +1,193 @@
 <!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>釣銭準備</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body class="bg-gray-50 text-gray-900">
-    <div class="max-w-xl mx-auto p-4">
-      <h1 class="text-2xl font-bold mb-4">釣銭準備</h1>
-      <div class="mb-4">
-        <label class="block font-semibold">在庫枚数を入力：</label>
-        <div id="inputs" class="grid grid-cols-2 gap-2 mt-2"></div>
-      </div>
-      <div class="mb-4">
-        <label class="block font-semibold">補填に使わない金種：</label>
-        <div id="excludeOptions" class="flex flex-wrap gap-2 mt-2"></div>
-      </div>
-      <button id="calcBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">計算する</button>
-      <div id="result" class="mt-4"></div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>釣銭準備</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-4">
+  <div class="max-w-md mx-auto bg-white rounded-xl shadow-md p-4 space-y-4">
+    <h1 class="text-xl font-bold">釣銭準備</h1>
+
+    <div id="input-area" class="grid grid-cols-2 gap-2"></div>
+
+    <div class="mb-4">
+      <h2 class="font-semibold mb-2">補填に使用する金種（使用したくない金種のチェックを外してください）</h2>
+      <div id="exclude-area" class="grid grid-cols-3 gap-2"></div>
     </div>
 
-    <script>
-      const denominations = [5000, 1000, 500, 100, 50, 10, 5, 1];
-      const baseTargets = { 5000: 15, 1000: 42, 500: 50, 100: 100, 50: 50, 10: 100, 5: 16, 1: 20 };
+    <button id="calculate" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">不足を計算する</button>
+    <pre id="shortageResult" class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"></pre>
 
-      const inputsDiv = document.getElementById("inputs");
-      const excludeOptionsDiv = document.getElementById("excludeOptions");
-      const resultDiv = document.getElementById("result");
+    <button id="adjust" class="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600">調整</button>
+    <pre id="adjustmentResult" class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"></pre>
+  </div>
 
-      const inputElems = {};
-      const excludeCheckboxes = {};
+  <script>
+    const denominations = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];
+    const baseTargets = {10000:0, 5000:15, 1000:42, 500:50, 100:100, 50:50, 10:100, 5:16, 1:20};
+    let latestInput = null;
 
-      denominations.forEach((denom) => {
-        const label = document.createElement("label");
-        label.textContent = `${denom}円`;
-        const input = document.createElement("input");
-        input.type = "number";
-        input.value = 0;
-        input.min = 0;
-        input.className = "border rounded p-1 w-full";
-        inputsDiv.appendChild(label);
-        inputsDiv.appendChild(input);
-        inputElems[denom] = input;
+    const inputArea = document.getElementById("input-area");
+    const excludeArea = document.getElementById("exclude-area");
 
-        const checkboxLabel = document.createElement("label");
-        checkboxLabel.className = "inline-flex items-center";
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.className = "mr-1";
-        excludeCheckboxes[denom] = checkbox;
-        checkboxLabel.appendChild(checkbox);
-        checkboxLabel.appendChild(document.createTextNode(`${denom}円`));
-        excludeOptionsDiv.appendChild(checkboxLabel);
+    denominations.forEach(denom => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "flex flex-col items-start";
+      wrapper.innerHTML = `
+        <label class="text-sm font-medium">${denom}円 在庫</label>
+        <input type="number" id="input${denom}" class="border rounded p-1 w-full" min="0" />
+      `;
+      inputArea.appendChild(wrapper);
+
+      const checkboxWrapper = document.createElement("div");
+      checkboxWrapper.className = "flex items-center space-x-1";
+      checkboxWrapper.innerHTML = `
+        <input type="checkbox" id="use${denom}" checked />
+        <label for="use${denom}">${denom}円</label>
+      `;
+      excludeArea.appendChild(checkboxWrapper);
+    });
+
+    document.getElementById("calculate").addEventListener("click", () => {
+      const input = {};
+      denominations.forEach(denom => {
+        input[denom] = parseInt(document.getElementById(`input${denom}`).value) || 0;
       });
 
-      document.getElementById("calcBtn").addEventListener("click", () => {
-        const stock = {};
-        denominations.forEach((d) => (stock[d] = parseInt(inputElems[d].value, 10) || 0));
+      latestInput = input;
+      const shortage = {};
+      let result = "";
 
-        const excludeList = denominations.filter((d) => excludeCheckboxes[d].checked);
-
-        const result = adjustCoins(stock, baseTargets, excludeList);
-
-        resultDiv.innerHTML = `
-          <div class="font-semibold mb-2">不足枚数：</div>
-          <ul class="list-disc list-inside mb-4">
-            ${Object.entries(result.shortage)
-              .map(([denom, count]) => `<li>${denom}円 × ${count}枚</li>`) 
-              .join("") || "<li>なし</li>"}
-          </ul>
-          <div class="font-semibold mb-2">補填内訳：</div>
-          <ul class="list-disc list-inside">
-            ${result.substitutes
-              .map((s) => `<li>${s.denom}円 × ${s.count}枚</li>`) 
-              .join("") || "<li>なし</li>"}
-          </ul>
-        `;
-      });
-
-      function adjustCoins(stock, targets, exclude) {
-        const shortage = {};
-        const substitutes = [];
-        const tempStock = { ...stock };
-
-        for (const d of denominations) {
-          const needed = targets[d];
-          const available = tempStock[d];
-          if (available < needed) {
-            shortage[d] = needed - available;
-            tempStock[d] = 0;
-          } else {
-            tempStock[d] -= needed;
-          }
+      for (let denom of denominations) {
+        const target = baseTargets[denom];
+        const stock = input[denom];
+        if (stock < target) {
+          shortage[denom] = target - stock;
+          result += `${denom}円×${shortage[denom]}枚 = ${denom * shortage[denom]}円\n`;
         }
+      }
 
-        for (const [dStr, count] of Object.entries(shortage)) {
-          const denom = parseInt(dStr);
-          let remaining = denom * count;
+      const total = Object.entries(shortage).reduce((sum, [d, n]) => sum + d * n, 0);
+      result += total ? `不足合計　${total.toLocaleString()}円` : "不足なし。準備OK。";
 
-          for (const sub of denominations) {
-            if (sub === denom || exclude.includes(sub)) continue;
-            const subCount = Math.floor(remaining / sub);
-            const usable = Math.min(subCount, tempStock[sub]);
-            if (usable > 0) {
-              substitutes.push({ denom: sub, count: usable });
-              tempStock[sub] -= usable;
-              remaining -= usable * sub;
-              if (remaining <= 0) break;
+      document.getElementById("shortageResult").innerText = result;
+    });
+
+    document.getElementById("adjust").addEventListener("click", () => {
+      if (!latestInput) {
+        document.getElementById("adjustmentResult").innerText = "※ 先に「不足を計算する」を押してください。";
+        return;
+      }
+
+      document.getElementById("adjustmentResult").innerText = "調整中です...";
+
+      const usableDenoms = denominations.filter(d => document.getElementById(`use${d}`).checked);
+
+      const workerBlob = new Blob([`onmessage = ${function (e) {
+        const { input, baseTargets, denominations, usableDenoms, maxTry } = e.data;
+        let best = null;
+        let bestTotal = Infinity;
+
+        for (let t = 0; t < maxTry; t++) {
+          const newTargets = {};
+          const shortage = {};
+          for (let denom of denominations) {
+            let diff = baseTargets[denom] - (input[denom] || 0);
+            if (diff > 0) {
+              if (denom === 5000) {
+                const add = Math.random() < 0.5 ? 1 : 0;
+                newTargets[denom] = baseTargets[denom] + add;
+              } else {
+                const add = Math.floor(Math.random() * 3);
+                newTargets[denom] = baseTargets[denom] + add;
+              }
+            } else {
+              newTargets[denom] = baseTargets[denom];
+            }
+            if (newTargets[denom] > (input[denom] || 0)) {
+              shortage[denom] = newTargets[denom] - (input[denom] || 0);
+            }
+          }
+
+          const usableCoins = denominations
+            .filter(d => usableDenoms.includes(d))
+            .map(d => {
+              const adjustedInput = input[d] + (shortage[d] || 0);
+              return [d, Math.max(0, adjustedInput - (newTargets[d] || 0))];
+            }).filter(([_, count]) => count > 0);
+
+          const targetAmount = Object.entries(shortage).reduce((sum, [d, n]) => sum + d * n, 0);
+
+          const dp = [{ sum: 0, combo: {} }];
+          for (let [coin, count] of usableCoins) {
+            const newDp = [];
+            for (let { sum, combo } of dp) {
+              for (let i = 0; i <= count; i++) {
+                const newSum = sum + coin * i;
+                if (newSum > targetAmount * 2) break;
+                const newCombo = { ...combo };
+                if (i > 0) newCombo[coin] = (newCombo[coin] || 0) + i;
+                newDp.push({ sum: newSum, combo: newCombo });
+              }
+            }
+            dp.push(...newDp);
+          }
+
+          for (let { sum, combo } of dp) {
+            if (sum >= targetAmount && sum < bestTotal) {
+              best = { shortage, shortageTotal: targetAmount, combo };
+              bestTotal = sum;
             }
           }
         }
 
-        return { shortage, substitutes };
-      }
-    </script>
-  </body>
+        postMessage(best);
+      }}`], { type: "application/javascript" });
+
+      const workerURL = URL.createObjectURL(workerBlob);
+      const worker = new Worker(workerURL);
+
+      worker.postMessage({
+        input: latestInput,
+        baseTargets,
+        denominations,
+        usableDenoms,
+        maxTry: 30
+      });
+
+      worker.onmessage = (e) => {
+        const best = e.data;
+        if (!best) {
+          document.getElementById("adjustmentResult").innerText = "※ 補填できませんでした。";
+          return;
+        }
+
+        let resultText = `【調整後不足金種】\n`;
+        for (let denom of denominations) {
+          if (best.shortage[denom]) {
+            resultText += `${denom}円×${best.shortage[denom]}枚 = ${denom * best.shortage[denom]}円\n`;
+          }
+        }
+
+        resultText += `不足合計　${best.shortageTotal.toLocaleString()}円\n\n`;
+        resultText += `【補填内訳】\n`;
+
+        let 補填合計 = 0;
+        for (let denom of denominations) {
+          if (best.combo[denom]) {
+            const amount = denom * best.combo[denom];
+            補填合計 += amount;
+            resultText += `${denom}円×${best.combo[denom]}枚 = ${amount.toLocaleString()}円\n`;
+          }
+        }
+
+        resultText += `補填合計　${補填合計.toLocaleString()}円`;
+        document.getElementById("adjustmentResult").innerText = resultText;
+        worker.terminate();
+      };
+    });
+  </script>
+</body>
 </html>

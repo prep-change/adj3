@@ -1,155 +1,140 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
   <title>釣銭準備</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50 p-4 text-sm">
+<body class="bg-gray-100 p-4">
+  <div class="max-w-xl mx-auto bg-white p-4 rounded shadow space-y-4">
+    <h1 class="text-xl font-bold">釣銭準備</h1>
 
-  <h1 class="text-xl font-bold mb-4">釣銭準備</h1>
-
-  <form id="form" class="space-y-4">
-    <div class="grid grid-cols-3 gap-2">
-      <label class="font-semibold">金種</label>
-      <label class="font-semibold">在庫</label>
-      <label class="font-semibold">希望枚数</label>
-
-      <!-- 金種ごとに入力欄を生成 -->
-      ${[10000, 5000, 1000, 500, 100, 50, 10, 5, 1].map(denom => `
-        <label>${denom}円</label>
-        <input type="number" name="stock_${denom}" class="border rounded px-2 py-1" value="0" min="0"/>
-        <input type="number" name="target_${denom}" class="border rounded px-2 py-1" value="0" min="0"/>
-      `).join('')}
+    <div>
+      <p class="font-semibold">在庫を入力（枚数）:</p>
+      <div id="inputs" class="grid grid-cols-3 gap-2 mt-2"></div>
     </div>
 
     <div>
-      <label class="block font-semibold mb-1">不足金種の増加候補から除外する金種：</label>
-      <div class="flex flex-wrap gap-2">
-        ${[10000, 5000, 1000, 500, 100, 50, 10, 5, 1].map(denom => `
-          <label class="inline-flex items-center">
-            <input type="checkbox" name="exclude" value="${denom}" class="mr-1"/>
-            ${denom}円
-          </label>
-        `).join('')}
-      </div>
+      <p class="font-semibold">不足金種の調整候補から除外する金種:</p>
+      <div id="excludeChecks" class="grid grid-cols-3 gap-2 mt-2 text-sm"></div>
     </div>
 
-    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-      計算する
-    </button>
-  </form>
+    <div class="flex space-x-2">
+      <button onclick="calculate()" class="bg-blue-500 text-white px-4 py-2 rounded">計算する</button>
+      <button onclick="adjust()" class="bg-green-500 text-white px-4 py-2 rounded">調整する</button>
+    </div>
 
-  <div id="result" class="mt-6 whitespace-pre-wrap font-mono text-sm text-gray-800"></div>
+    <div id="result" class="whitespace-pre-wrap text-sm"></div>
+  </div>
 
   <script>
-    const fixedTotal = 155600;
+    const denominations = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];
+    const goalAmount = 155600;
+    const goalCounts = {10000: 5, 5000: 4, 1000: 10, 500: 20, 100: 50, 50: 40, 10: 50, 5: 20, 1: 10};
 
-    document.getElementById('form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const form = new FormData(e.target);
-      const stocks = {}, targets = {};
-      const exclude = [];
+    const inputsDiv = document.getElementById("inputs");
+    const checksDiv = document.getElementById("excludeChecks");
 
-      form.forEach((value, key) => {
-        if (key.startsWith('stock_')) {
-          const denom = Number(key.replace('stock_', ''));
-          stocks[denom] = Number(value);
-        } else if (key.startsWith('target_')) {
-          const denom = Number(key.replace('target_', ''));
-          targets[denom] = Number(value);
-        } else if (key === 'exclude') {
-          exclude.push(Number(value));
-        }
-      });
-
-      const inputTotal = Object.entries(targets).reduce((sum, [d, n]) => sum + d * n, 0);
-      const shortage = Object.fromEntries(Object.entries(targets).filter(([d, n]) => n > stocks[d]));
-
-      const shortageTotal = Object.entries(shortage).reduce((sum, [d, n]) =>
-        sum + (n - stocks[d]) * d, 0
-      );
-
-      const resultDiv = document.getElementById('result');
-      resultDiv.innerText = '調整中...';
-
-      setTimeout(() => {
-        const patterns = generateAdjustmentPatterns(shortage, exclude, 5); // 最大5枚まで調整
-        const adjusted = findBestPattern(patterns, stocks, fixedTotal);
-        if (!adjusted) {
-          resultDiv.innerText = '調整できませんでした。';
-          return;
-        }
-
-        const diffs = Object.entries(adjusted).filter(([d, n]) => n > shortage[d]);
-        const supplement = calculateSupplement(stocks, adjusted);
-
-        let output = `不足金額：${shortageTotal.toLocaleString()}円\n\n`;
-        output += '→ 不足を補うために以下を増加:\n';
-        diffs.forEach(([d, n]) => {
-          output += `  ${d}円 × ${(n - shortage[d])}枚\n`;
-        });
-
-        output += '\n→ 補填に使用した金種:\n';
-        Object.entries(supplement).forEach(([d, n]) => {
-          if (n > 0) output += `  ${d}円 × ${n}枚\n`;
-        });
-
-        resultDiv.innerText = output;
-      }, 50);
+    denominations.forEach(denom => {
+      inputsDiv.innerHTML += `
+        <label class="flex items-center space-x-1">
+          <span>${denom}円</span>
+          <input id="in_${denom}" type="number" min="0" value="0" class="w-16 border rounded px-1 py-0.5">
+        </label>`;
+      checksDiv.innerHTML += `
+        <label class="flex items-center space-x-1">
+          <input type="checkbox" id="chk_${denom}">
+          <span>${denom}円</span>
+        </label>`;
     });
 
-    function generateAdjustmentPatterns(baseTargets, excludeFromIncrease, extraCount) {
-      const patterns = [];
-      const denoms = Object.keys(baseTargets).map(Number);
+    let shortage = {};
 
-      function backtrack(i, remaining, current) {
-        if (i === denoms.length) {
-          if (remaining === 0) patterns.push({ ...current });
-          return;
+    function calculate() {
+      shortage = {};
+      let output = `目標金額: ${goalAmount.toLocaleString()}円\n\n`;
+      let total = 0;
+
+      denominations.forEach(d => {
+        const stock = parseInt(document.getElementById(`in_${d}`).value || 0);
+        const target = goalCounts[d];
+        const count = Math.min(stock, target);
+        const diff = target - count;
+
+        if (diff > 0) {
+          shortage[d] = diff;
         }
-        const denom = denoms[i];
-        const limit = excludeFromIncrease.includes(denom)
-          ? 0
-          : (denom === 5000 ? Math.min(1, remaining) : remaining);
 
-        for (let add = 0; add <= limit; add++) {
-          current[denom] = baseTargets[denom] + add;
-          backtrack(i + 1, remaining - add, current);
-        }
-      }
-
-      backtrack(0, extraCount, {});
-      return patterns;
-    }
-
-    function calculateSupplement(stocks, targets) {
-      let remain = Object.entries(targets).reduce((sum, [d, n]) => sum + d * n, 0)
-                 - Object.entries(stocks).reduce((sum, [d, n]) => sum + d * n, 0);
-      const supplement = {};
-      const denoms = Object.keys(stocks).map(Number).sort((a, b) => b - a);
-
-      for (const d of denoms) {
-        const available = stocks[d];
-        const use = Math.min(Math.floor(remain / d), available);
-        supplement[d] = use;
-        remain -= use * d;
-      }
-      return supplement;
-    }
-
-    function findBestPattern(patterns, stocks, totalTarget) {
-      return patterns.find(pattern => {
-        const total = Object.entries(pattern).reduce((sum, [d, n]) => sum + d * n, 0);
-        if (total !== totalTarget) return false;
-
-        const supplement = calculateSupplement(stocks, pattern);
-        const supplied = Object.entries(supplement).reduce((sum, [d, n]) => sum + d * n, 0);
-        const needed = Object.entries(pattern).reduce((sum, [d, n]) => sum + d * n, 0)
-                    - Object.entries(stocks).reduce((sum, [d, n]) => sum + d * n, 0);
-        return supplied >= needed;
+        total += d * count;
+        output += `${d}円: 使う ${count}枚（目標 ${target} / 在庫 ${stock}）\n`;
       });
+
+      output += `\n不足: ${Object.entries(shortage).map(([d,n]) => `${d}円 × ${n}`).join(', ') || 'なし'}\n`;
+      output += `合計: ${total.toLocaleString()}円`;
+
+      document.getElementById("result").textContent = output;
+    }
+
+    function adjust() {
+      if (!shortage || Object.keys(shortage).length === 0) {
+        document.getElementById("result").textContent += "\n\n不足はありません。";
+        return;
+      }
+
+      let excludeSet = new Set();
+      denominations.forEach(d => {
+        if (document.getElementById(`chk_${d}`).checked) {
+          excludeSet.add(parseInt(d));
+        }
+      });
+
+      const stock = {};
+      denominations.forEach(d => {
+        stock[d] = parseInt(document.getElementById(`in_${d}`).value || 0);
+      });
+
+      const input = {...stock};
+      let shortageCopy = {...shortage};
+
+      // 調整: 除外されてない不足金種を1枚ずつ増やす
+      for (const d of denominations) {
+        if (shortageCopy[d] && !excludeSet.has(parseInt(d))) {
+          shortageCopy[d] -= 1;
+          input[d] += 1;
+        }
+      }
+
+      // 不足の残り金額を補填
+      let remain = 0;
+      for (const [d, n] of Object.entries(shortageCopy)) {
+        remain += parseInt(d) * n;
+      }
+
+      const fill = {};
+      for (const d of denominations) {
+        let maxUse = stock[d] - input[d];
+        let need = Math.floor(remain / d);
+        let use = Math.min(need, maxUse);
+        if (use > 0) {
+          fill[d] = use;
+          input[d] += use;
+          remain -= use * d;
+        }
+      }
+
+      let output = `調整後:\n\n`;
+      let total = 0;
+
+      denominations.forEach(d => {
+        const count = input[d];
+        total += d * count;
+        output += `${d}円: 使う ${count}枚\n`;
+      });
+
+      output += `\n補填内訳: ${Object.entries(fill).map(([d, n]) => `${d}円×${n}`).join(', ') || 'なし'}\n`;
+      output += `合計: ${total.toLocaleString()}円`;
+
+      document.getElementById("result").textContent = output;
     }
   </script>
 </body>
